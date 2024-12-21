@@ -90,6 +90,8 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const keyword = searchParams.get('keyword')?.toLowerCase() || '';
     const sentiment = searchParams.get('sentiment') || 'all';
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '50');
 
     // Get posts from the last 24 hours
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -120,9 +122,18 @@ export async function GET(
         )
       : posts;
 
+    // Calculate total count before pagination
+    const totalCount = keywordFilteredPosts.length;
+
+    // Apply pagination
+    const paginatedPosts = keywordFilteredPosts.slice(
+      (page - 1) * pageSize,
+      page * pageSize
+    );
+
     // Analyze sentiment for filtered posts
     const postsWithSentiment = await Promise.all(
-      keywordFilteredPosts.map(async (post) => {
+      paginatedPosts.map(async (post) => {
         const sentimentAnalysis = await analyzeSentiment(post);
         return { ...post, sentiment: sentimentAnalysis };
       })
@@ -136,7 +147,15 @@ export async function GET(
     // Sort by score in descending order
     const sortedPosts = sentimentFilteredPosts.sort((a, b) => b.score - a.score);
 
-    return NextResponse.json(sortedPosts);
+    return NextResponse.json({
+      posts: sortedPosts,
+      pagination: {
+        total: totalCount,
+        page,
+        pageSize,
+        totalPages: Math.ceil(totalCount / pageSize),
+      }
+    });
   } catch (error) {
     console.error('Error fetching Reddit posts:', error);
     return NextResponse.json(

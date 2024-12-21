@@ -12,6 +12,8 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { SearchBar } from './SearchBar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface RedditPost {
   title: string;
@@ -29,40 +31,60 @@ interface TopPostsTableProps {
   subreddit: string;
 }
 
+interface PaginationData {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export function TopPostsTable({ subreddit }: TopPostsTableProps) {
   const [posts, setPosts] = useState<RedditPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [keyword, setKeyword] = useState('');
   const [sentiment, setSentiment] = useState('all');
+  const [pagination, setPagination] = useState<PaginationData>({
+    total: 0,
+    page: 1,
+    pageSize: 50,
+    totalPages: 1,
+  });
 
   useEffect(() => {
-    async function fetchPosts() {
-      try {
-        setLoading(true);
-        setError(null);
-        const params = new URLSearchParams();
-        if (keyword) params.append('keyword', keyword);
-        if (sentiment !== 'all') params.append('sentiment', sentiment);
-
-        const response = await fetch(
-          `/api/subreddit/${subreddit}/posts?${params.toString()}`
-        );
-        if (!response.ok) throw new Error('Failed to fetch posts');
-        const data = await response.json();
-        setPosts(data.map((post: any) => ({
-          ...post,
-          createdAt: new Date(post.createdAt),
-        })));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch posts');
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchPosts();
-  }, [subreddit, keyword, sentiment]);
+  }, [subreddit, keyword, sentiment, pagination.page]);
+
+  const fetchPosts = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const params = new URLSearchParams();
+      if (keyword) params.append('keyword', keyword);
+      if (sentiment !== 'all') params.append('sentiment', sentiment);
+      params.append('page', pagination.page.toString());
+      params.append('pageSize', pagination.pageSize.toString());
+
+      const response = await fetch(
+        `/api/subreddit/${subreddit}/posts?${params.toString()}`
+      );
+      if (!response.ok) throw new Error('Failed to fetch posts');
+      const data = await response.json();
+      setPosts(data.posts.map((post: any) => ({
+        ...post,
+        createdAt: new Date(post.createdAt),
+      })));
+      setPagination(data.pagination);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch posts');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setPagination(prev => ({ ...prev, page: newPage }));
+  };
 
   const getSentimentColor = (sentiment: string) => {
     switch (sentiment) {
@@ -112,8 +134,14 @@ export function TopPostsTable({ subreddit }: TopPostsTableProps) {
       <SearchBar
         keyword={keyword}
         sentiment={sentiment}
-        onKeywordChange={setKeyword}
-        onSentimentChange={setSentiment}
+        onKeywordChange={(k) => {
+          setKeyword(k);
+          setPagination(prev => ({ ...prev, page: 1 }));
+        }}
+        onSentimentChange={(s) => {
+          setSentiment(s);
+          setPagination(prev => ({ ...prev, page: 1 }));
+        }}
       />
       <div className="rounded-md border">
         <Table>
@@ -156,6 +184,36 @@ export function TopPostsTable({ subreddit }: TopPostsTableProps) {
             ))}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Pagination Controls */}
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-gray-600">
+          Showing {posts.length} of {pagination.total} posts
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handlePageChange(pagination.page - 1)}
+            disabled={pagination.page === 1}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </Button>
+          <div className="text-sm">
+            Page {pagination.page} of {pagination.totalPages}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handlePageChange(pagination.page + 1)}
+            disabled={pagination.page === pagination.totalPages}
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </div>
   );
