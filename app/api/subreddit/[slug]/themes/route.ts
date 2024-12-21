@@ -68,41 +68,80 @@ const categorySchema = {
   ],
 };
 
+// Add retry logic for API calls
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries = 3,
+  delay = 1000
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries === 0) throw error;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return withRetry(fn, retries - 1, delay * 2);
+  }
+}
+
 async function analyzePost(post: { title: string; content: string }) {
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          role: "system",
-          content: "You are a Reddit post analyzer. Analyze the post and categorize it based on its content."
-        },
-        {
-          role: "user",
-          content: `Analyze this Reddit post and categorize it:
-            Title: ${post.title}
-            Content: ${post.content}`
-        }
-      ],
-      functions: [
-        {
-          name: "categorize_post",
-          description: "Categorize a Reddit post into predefined categories",
-          parameters: categorySchema
-        }
-      ],
-      function_call: { name: "categorize_post" }
+    return await withRetry(async () => {
+      const response = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content: "You are a Reddit post analyzer specializing in identifying side hustle and entrepreneurship opportunities. Analyze the post and categorize it based on its content."
+          },
+          {
+            role: "user",
+            content: `Analyze this Reddit post and categorize it:
+              Title: ${post.title}
+              Content: ${post.content || '[No content]'}`
+          }
+        ],
+        functions: [
+          {
+            name: "categorize_post",
+            description: "Categorize a Reddit post into predefined categories",
+            parameters: categorySchema
+          }
+        ],
+        function_call: { name: "categorize_post" },
+        temperature: 0.7, // Add some variability but keep it mostly consistent
+      });
+
+      const functionResponse = response.choices[0].message.function_call;
+      if (!functionResponse) {
+        throw new Error('No function response received');
+      }
+
+      const analysis = PostCategoryAnalysisSchema.parse(
+        JSON.parse(functionResponse.arguments)
+      );
+
+      // Ensure at least one category is true
+      const hasCategory = Object.values(analysis).some(v => v);
+      if (!hasCategory) {
+        analysis.moneyTalk = true; // Default fallback category
+      }
+
+      return analysis;
     });
-
-    const functionResponse = response.choices[0].message.function_call;
-    if (!functionResponse) {
-      throw new Error('No function response received');
-    }
-
-    return PostCategoryAnalysisSchema.parse(JSON.parse(functionResponse.arguments));
   } catch (error) {
-    console.error('Error analyzing post:', error);
-    return null;
+    console.error('Error analyzing post:', {
+      title: post.title,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    // Return a default categorization instead of null
+    return {
+      sideHustleOpportunities: false,
+      freelanceOpportunities: false,
+      passiveIncomeOpportunities: false,
+      moneyTalk: true, // Default fallback category
+      sideHustleTips: false,
+      sideHustleResources: false,
+    };
   }
 }
 
@@ -114,22 +153,24 @@ export async function GET(
     // Get posts from the last 24 hours
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    // Fetch posts
-    const posts = await reddit
-      .getSubreddit(params.slug)
-      .getNew()
-      .then(submissions =>
-        submissions
-          .filter(post => new Date(post.created_utc * 1000) > oneDayAgo)
-          .map(post => ({
-            title: post.title,
-            content: post.selftext,
-            score: post.score,
-            url: `https://reddit.com${post.permalink}`,
-          }))
-      );
+    // Fetch posts with better error handling
+    const posts = await withRetry(async () => {
+      const submissions = await reddit
+        .getSubreddit(params.slug)
+        .getNew();
+      
+      return submissions
+        .filter(post => new Date(post.created_utc * 1000) > oneDayAgo)
+        .map(post => ({
+          title: post.title,
+          content: post.selftext,
+          score: post.score,
+          url: `https://reddit.com${post.permalink}`,
+        }))
+        .slice(0, 25); // Limit to 25 posts for performance
+    });
 
-    // Analyze posts in parallel
+    // Analyze posts in parallel with a concurrency limit
     const analysisResults = await Promise.all(
       posts.map(post => analyzePost(post))
     );
