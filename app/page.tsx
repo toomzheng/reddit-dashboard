@@ -16,19 +16,22 @@ interface Subreddit {
 }
 
 export default function Home() {
-  const { data: session, status } = useSession();
+  const { data: session, status } = useSession({
+    required: true,
+    onUnauthenticated() {
+      router.push('/auth/signin');
+    },
+  });
   const router = useRouter();
   const [subreddits, setSubreddits] = useState<Subreddit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/auth/signin');
-    } else if (status === 'authenticated') {
+    if (status === 'authenticated') {
       fetchSubreddits();
     }
-  }, [status, router]);
+  }, [status]);
 
   const fetchSubreddits = async () => {
     try {
@@ -85,7 +88,10 @@ export default function Home() {
   };
 
   const handleSignOut = async () => {
-    await signOut({ callbackUrl: '/auth/signin' });
+    await signOut({ 
+      callbackUrl: '/auth/signin',
+      redirect: true,
+    });
   };
 
   if (status === 'loading' || loading) {

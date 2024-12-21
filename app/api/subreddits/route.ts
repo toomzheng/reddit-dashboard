@@ -17,7 +17,7 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session?.user?.email) {
+    if (!session?.user?.id) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -26,9 +26,7 @@ export async function GET() {
 
     const subreddits = await prisma.subreddit.findMany({
       where: {
-        user: {
-          email: session.user.email
-        }
+        userId: session.user.id
       },
       orderBy: { updatedAt: 'desc' },
     });
@@ -47,7 +45,7 @@ export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session?.user?.email) {
+    if (!session?.user?.id) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -56,23 +54,11 @@ export async function POST(request: Request) {
 
     const { name } = await request.json();
     
-    // Get the user
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email }
-    });
-
-    if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
     // Check if the user already tracks this subreddit
     const existingSubreddit = await prisma.subreddit.findFirst({
       where: {
         name,
-        userId: user.id
+        userId: session.user.id
       }
     });
 
@@ -91,7 +77,7 @@ export async function POST(request: Request) {
         name,
         subscribers: subredditInfo.subscribers,
         posts: 0, // We'll update this with the actual 24h post count
-        userId: user.id,
+        userId: session.user.id,
       },
     });
 

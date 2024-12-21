@@ -2,8 +2,28 @@
 
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { useState } from "react";
 
 export default function SignIn() {
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSignIn = async () => {
+    try {
+      const result = await signIn('google', { 
+        callbackUrl: '/',
+        redirect: true,
+      });
+      
+      if (result?.error) {
+        setError(result.error);
+        console.error('Sign in error:', result.error);
+      }
+    } catch (err) {
+      console.error('Sign in error:', err);
+      setError('An error occurred during sign in');
+    }
+  };
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-6 shadow-lg">
@@ -16,10 +36,16 @@ export default function SignIn() {
           </p>
         </div>
 
+        {error && (
+          <div className="rounded-md bg-red-50 p-4 text-sm text-red-500">
+            {error}
+          </div>
+        )}
+
         <div className="mt-8 space-y-6">
           <Button
             className="w-full flex items-center justify-center gap-3"
-            onClick={() => signIn('google', { callbackUrl: '/' })}
+            onClick={handleSignIn}
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24">
               <path

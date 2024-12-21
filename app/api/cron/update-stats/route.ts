@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/db';
 import snoowrap from 'snoowrap';
+import { authOptions } from '../../auth/[...nextauth]/route';
 
 // Initialize the Reddit client
 const reddit = new snoowrap({
@@ -13,8 +15,21 @@ const reddit = new snoowrap({
 
 export async function GET() {
   try {
-    // Get all subreddits
-    const subreddits = await prisma.subreddit.findMany();
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get all subreddits for the current user
+    const subreddits = await prisma.subreddit.findMany({
+      where: {
+        userId: session.user.id
+      }
+    });
 
     // Update each subreddit's stats
     const updates = subreddits.map(async (subreddit) => {
@@ -33,7 +48,10 @@ export async function GET() {
 
         // Update the subreddit stats
         return prisma.subreddit.update({
-          where: { id: subreddit.id },
+          where: { 
+            id: subreddit.id,
+            userId: session.user.id // Ensure we only update user's own subreddits
+          },
           data: {
             subscribers: subredditInfo.subscribers,
             posts: posts.length,
