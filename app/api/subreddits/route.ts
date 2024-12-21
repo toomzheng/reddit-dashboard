@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/db';
 import snoowrap from 'snoowrap';
+import { authOptions } from '../auth/[...nextauth]/route';
 
 // Initialize the Reddit client
 const reddit = new snoowrap({
@@ -13,9 +15,24 @@ const reddit = new snoowrap({
 
 export async function GET() {
   try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     const subreddits = await prisma.subreddit.findMany({
+      where: {
+        user: {
+          email: session.user.email
+        }
+      },
       orderBy: { updatedAt: 'desc' },
     });
+    
     return NextResponse.json(subreddits);
   } catch (error) {
     console.error('Error fetching subreddits:', error);
@@ -28,7 +45,43 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     const { name } = await request.json();
+    
+    // Get the user
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email }
+    });
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    // Check if the user already tracks this subreddit
+    const existingSubreddit = await prisma.subreddit.findFirst({
+      where: {
+        name,
+        userId: user.id
+      }
+    });
+
+    if (existingSubreddit) {
+      return NextResponse.json(
+        { error: 'You are already tracking this subreddit' },
+        { status: 400 }
+      );
+    }
     
     // Validate subreddit exists and get its stats
     const subredditInfo = await reddit.getSubreddit(name).fetch();
@@ -38,6 +91,7 @@ export async function POST(request: Request) {
         name,
         subscribers: subredditInfo.subscribers,
         posts: 0, // We'll update this with the actual 24h post count
+        userId: user.id,
       },
     });
 
