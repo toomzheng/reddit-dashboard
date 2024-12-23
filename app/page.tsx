@@ -42,7 +42,7 @@ export default function Home() {
         },
         credentials: 'include',
       });
-      
+
       if (!response.ok) {
         if (response.status === 401) {
           router.push('/auth/signin');
@@ -50,7 +50,7 @@ export default function Home() {
         }
         throw new Error('Failed to fetch subreddits');
       }
-      
+
       const data = await response.json();
       setSubreddits(data);
     } catch (err) {
@@ -70,7 +70,7 @@ export default function Home() {
         credentials: 'include',
         body: JSON.stringify({ name }),
       });
-      
+
       if (!response.ok) {
         if (response.status === 401) {
           router.push('/auth/signin');
@@ -78,7 +78,7 @@ export default function Home() {
         }
         throw new Error('Failed to add subreddit');
       }
-      
+
       // Refresh the subreddits list
       fetchSubreddits();
     } catch (err) {
@@ -87,8 +87,34 @@ export default function Home() {
     }
   };
 
+  const handleDeleteSubreddit = async (name: string) => {
+    try {
+      const response = await fetch(`/api/subreddits/${name}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.push('/auth/signin');
+          return;
+        }
+        throw new Error('Failed to delete subreddit');
+      }
+
+      // Remove the subreddit from the local state
+      setSubreddits(subreddits.filter(s => s.name !== name));
+    } catch (err) {
+      console.error('Error deleting subreddit:', err);
+      // You might want to show an error message to the user here
+    }
+  };
+
   const handleSignOut = async () => {
-    await signOut({ 
+    await signOut({
       callbackUrl: '/auth/signin',
       redirect: true,
     });
@@ -163,6 +189,7 @@ export default function Home() {
                 posts: subreddit.posts,
                 subscribers: subreddit.subscribers,
               }}
+              onDelete={handleDeleteSubreddit}
             />
           ))}
         </div>
