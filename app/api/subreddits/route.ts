@@ -83,12 +83,13 @@ export async function POST(request: Request) {
 
     // Get posts from the last 24 hours to count them
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const posts = await reddit
+    const submissions = await reddit
       .getSubreddit(name)
-      .getNew()
-      .then(submissions =>
-        submissions.filter(post => new Date(post.created_utc * 1000) > oneDayAgo)
-      );
+      .getNew({ limit: 1000 }); // Maximum limit allowed by Reddit API
+    
+    const posts = submissions.filter(post => 
+      new Date(post.created_utc * 1000) > oneDayAgo
+    );
 
     // Update the post count
     await prisma.subreddit.update({
